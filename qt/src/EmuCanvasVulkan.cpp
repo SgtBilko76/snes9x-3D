@@ -1,5 +1,4 @@
 #include <QGuiApplication>
-#include <qpa/qplatformnativeinterface.h>
 #include <QtEvents>
 #include <QMessageBox>
 #include "EmuCanvasVulkan.hpp"
@@ -7,8 +6,6 @@
 
 #include "snes9x_imgui.h"
 #include "imgui_impl_vulkan.h"
-
-using namespace QNativeInterface;
 
 EmuCanvasVulkan::EmuCanvasVulkan(EmuConfig *config, QWidget *main_window)
     : EmuCanvas(config, main_window)
@@ -82,8 +79,8 @@ bool EmuCanvasVulkan::createContext()
         return true;
 
     platform = QGuiApplication::platformName();
-    auto pni = QGuiApplication::platformNativeInterface();
     QGuiApplication::sync();
+    auto app = reinterpret_cast<QGuiApplication *>(QGuiApplication::instance());
 
     context = std::make_unique<Vulkan::Context>();
     context->set_preferred_device(config->display_device_index);
@@ -100,9 +97,10 @@ bool EmuCanvasVulkan::createContext()
 #else
     if (platform == "wayland")
     {
+        auto iface = app->nativeInterface<QNativeInterface::QWaylandApplication>();
+        auto display = iface->display();
+        auto surface = (wl_surface *)main_window->winId();
         wayland_surface = std::make_unique<WaylandSurface>();
-        auto display = (wl_display *)pni->nativeResourceForWindow("display", window);
-        auto surface = (wl_surface *)pni->nativeResourceForWindow("surface", main_window->windowHandle());
         wayland_surface->attach(display, surface, { x() - main_window->x(), y() - main_window->y(), width(), height(), static_cast<int>(devicePixelRatio()) });
         auto [scaled_width, scaled_height] = wayland_surface->get_size();
 
@@ -117,7 +115,8 @@ bool EmuCanvasVulkan::createContext()
     }
     else if (platform == "xcb")
     {
-        auto display = (Display *)pni->nativeResourceForWindow("display", window);
+        auto iface = app->nativeInterface<QNativeInterface::QX11Application>();
+        auto display = iface->display();
         auto xid = (Window)winId();
 
         if (!context->init_Xlib() ||

@@ -5,7 +5,6 @@
 #include <QtEvents>
 #include <QGuiApplication>
 #include <qnamespace.h>
-#include <qpa/qplatformnativeinterface.h>
 
 #ifdef Q_OS_WIN
 #include <dwmapi.h>
@@ -378,10 +377,9 @@ void EmuMainWindow::setBypassCompositor(bool bypass)
 #ifndef _WIN32
     if (QGuiApplication::platformName() == "xcb")
     {
-        auto pni = QGuiApplication::platformNativeInterface();
-
         uint32_t value = bypass;
-        auto display = (Display *)pni->nativeResourceForWindow("display", windowHandle());
+        auto iface = app->qtapp->nativeInterface<QNativeInterface::QX11Application>();
+        auto display = iface->display();
         auto xid = winId();
         Atom net_wm_bypass_compositor = XInternAtom(display, "_NET_WM_BYPASS_COMPOSITOR", False);
         XChangeProperty(display, xid, net_wm_bypass_compositor, 6, 32, PropModeReplace, (unsigned char *)&value, 1);

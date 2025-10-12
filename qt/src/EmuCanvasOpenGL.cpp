@@ -1,6 +1,5 @@
 #include "EmuCanvasOpenGL.hpp"
 #include <QtGui/QGuiApplication>
-#include <qpa/qplatformnativeinterface.h>
 #include <QMessageBox>
 #include "common/video/opengl/opengl_context.hpp"
 
@@ -130,13 +129,14 @@ bool EmuCanvasOpenGL::createContext()
         return true;
 
     auto platform = QGuiApplication::platformName();
-    auto pni = QGuiApplication::platformNativeInterface();
+    auto app = reinterpret_cast<QGuiApplication *>(QGuiApplication::instance());
     QGuiApplication::sync();
 #ifndef _WIN32
     if (platform == "wayland")
     {
-        auto display = (wl_display *)pni->nativeResourceForWindow("display", main_window->windowHandle());
-        auto surface = (wl_surface *)pni->nativeResourceForWindow("surface", main_window->windowHandle());
+        auto iface = app->nativeInterface<QNativeInterface::QWaylandApplication>();
+        auto display = iface->display();
+        auto surface = (wl_surface *)main_window->winId();
         auto wayland_egl_context = new WaylandEGLContext();
         int s = devicePixelRatio();
 
@@ -151,7 +151,8 @@ bool EmuCanvasOpenGL::createContext()
     }
     else if (platform == "xcb")
     {
-        auto display = (Display *)pni->nativeResourceForWindow("display", windowHandle());
+        auto iface = app->nativeInterface<QNativeInterface::QX11Application>();
+        auto display = iface->display();
         auto xid = (Window)winId();
 
         auto glx_context = new GTKGLXContext();
