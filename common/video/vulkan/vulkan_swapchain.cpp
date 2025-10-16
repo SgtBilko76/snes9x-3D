@@ -45,7 +45,7 @@ void Swapchain::create_render_pass()
         .setAttachment(0)
         .setLayout(vk::ImageLayout::eColorAttachmentOptimal);
 
-    std::array<vk::SubpassDependency, 2> subpass_dependency{};
+    std::array<vk::SubpassDependency, 1> subpass_dependency{};
     subpass_dependency[0]
         .setSrcSubpass(VK_SUBPASS_EXTERNAL)
         .setDstSubpass(0)
@@ -53,14 +53,6 @@ void Swapchain::create_render_pass()
         .setSrcAccessMask(vk::AccessFlagBits(0))
         .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
         .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
-    subpass_dependency[1]
-        .setSrcSubpass(VK_SUBPASS_EXTERNAL)
-        .setDstSubpass(0)
-        .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-        .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
-        .setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-
 
     auto subpass_description = vk::SubpassDescription{}
         .setColorAttachments(attachment_reference)
