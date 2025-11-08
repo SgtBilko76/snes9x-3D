@@ -1841,7 +1841,7 @@
                     </child>
                     <child>
                       <object class="GtkImageMenuItem" id="fullscreen_item">
-                        <property name="label" translatable="yes">gtk-fullscreen</property>
+                        <property name="label">gtk-fullscreen</property>
                         <property name="visible">True</property>
                         <property name="use_stock">True</property>
                         <signal name="activate" handler="on_fullscreen_item_activate" swapped="no"/>
