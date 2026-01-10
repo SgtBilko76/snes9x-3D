@@ -755,10 +755,11 @@ xinerama_end:
 							GUI.depth, InputOutput, GUI.visual, CWBackPixel | CWColormap, &attrib);
 
 		/* Try to tell the Window Manager not to decorate this window. */
-		Atom wm_state   = XInternAtom (GUI.display, "_NET_WM_STATE", true );
-		Atom wm_fullscreen = XInternAtom (GUI.display, "_NET_WM_STATE_FULLSCREEN", true );
+		Atom wm_state      = XInternAtom (GUI.display, "_NET_WM_STATE", True);
+		Atom wm_fullscreen = XInternAtom (GUI.display, "_NET_WM_STATE_FULLSCREEN", True);
 
-		XChangeProperty(GUI.display, GUI.window, wm_state, XA_ATOM, 32, PropModeReplace, (unsigned char *)&wm_fullscreen, 1);
+		if (wm_state != None && wm_fullscreen != None)
+			XChangeProperty(GUI.display, GUI.window, wm_state, XA_ATOM, 32, PropModeReplace, (unsigned char *)&wm_fullscreen, 1);
 
 #ifdef USE_XVIDEO
 		if (GUI.use_xvideo)
