@@ -184,6 +184,8 @@ int Snes9xConfig::load_defaults()
     NetPlay.MaxFrameSkip = 10;
     Settings.TurboSkipFrames = 15;
     Settings.DisplayPressedKeys = false;
+    Settings.InitialInfoStringTimeout   =  120;
+    
 #ifdef ALLOW_CPU_OVERCLOCK
     Settings.MaxSpriteTilesPerLine = 34;
     Settings.OneClockCycle = 6;
@@ -237,7 +239,9 @@ int Snes9xConfig::save_config_file()
     outint("SplashBackground", splash_image, "0: Black, 1: Color bars, 2: Pattern, 3: Blue, 4: Default");
     outbool("AutoVRR", auto_vrr, "Automatically use the best settings for variable sync in fullscreen mode");
     outint("OSDSize", osd_size, "Size of on-screen display elements. Default: 24pt");
-
+    outint("MessageDisplayTime", Settings.InitialInfoStringTimeout, "Display timeout length of messages, in frames. Set to 0 to disable all message text. Default: 120.");
+    
+    
     section = "NTSC";
     outstring("Hue", std::to_string(ntsc_setup.hue));
     outstring("Saturation", std::to_string(ntsc_setup.saturation));
@@ -463,6 +467,7 @@ int Snes9xConfig::load_config_file()
     inint("SplashBackground", splash_image);
     inbool("AutoVRR", auto_vrr);
     inint("OSDSize", osd_size);
+    inint("MessageDisplayTime", Settings.InitialInfoStringTimeout);
 
     section = "NTSC";
     indouble("Hue", ntsc_setup.hue);
