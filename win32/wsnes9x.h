@@ -148,7 +148,6 @@ struct sCustomRomDlgSettings {
 
 struct sGUI {
     HWND hWnd;
-    HWND hWndRender;
     HMENU hMenu;
     HINSTANCE hInstance;
 
