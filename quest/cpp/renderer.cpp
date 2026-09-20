@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "log.h"
 
+#include <cmath>
 #include <cstdio>
 #include <map>
 #include <vector>
@@ -24,6 +25,7 @@ uint8_t g_layer_priority[emu::kLayerCount] = {};
 bool g_layered = false;
 bool g_layer_mode7[emu::kLayerCount] = {};
 int g_filter = 1;
+float g_gamma = 1.0f;
 GLuint g_overlay_texture = 0;
 GLuint g_overlay_program = 0;
 int g_overlay_width = 0;
@@ -109,7 +111,21 @@ uniform sampler2D uMode7Depth;    // one entry per scanline
 uniform sampler2D uObjectDepth;   // per pixel, for the sprite layer
 uniform float uObjectLayer;       // which layer that is, or -1
 uniform bool uLayered;
-uniform float uFilter;      // 0 pixels, 1 sharp, 2 soft
+uniform float uFilterMode;   // 0 nearest, 1 blended edge, 2 bilinear
+uniform float uFilterWidth;  // how many texels wide that edge blend is
+uniform float uGamma;        // trim, 1.0 leaves the picture alone
+
+
+// The swapchain is sRGB, so whatever is written gets encoded on the way in.
+// The picture is already display-referred, so it is taken back to linear here
+// and the hardware's encode restores it exactly.  Skipping this is what makes
+// everything look washed out.
+vec3 ToLinear(vec3 colour)
+{
+    return mix(colour / 12.92,
+               pow((colour + 0.055) / 1.055, vec3(2.4)),
+               step(vec3(0.04045), colour));
+}
 
 // Screen-space size of one source texel.  Worked out once in main(), because
 // derivatives are only defined where every fragment in a quad takes the same
@@ -118,19 +134,20 @@ vec2 gTexelScale;
 
 // How much of the neighbouring texel to mix in, per axis.
 //
-//   0 pixels -- no mixing at all, a hard pixel grid
-//   1 sharp  -- mix only across the last texel at each edge, which keeps the
-//               grid crisp while taking the stair-steps off it
-//   2 soft   -- ordinary bilinear
+// The blend is confined to a band around the texel edge whose width is given
+// in screen pixels. One pixel wide is just enough to take the stair-steps off
+// while the grid still reads as a grid; widening it walks towards bilinear,
+// and past a certain point it is bilinear, so that is its own mode rather
+// than an ever-larger number.
 vec2 FilterWeights(vec2 frac)
 {
-    if (uFilter < 0.5)
+    if (uFilterMode < 0.5)
         return step(vec2(0.5), frac);
 
-    if (uFilter > 1.5)
+    if (uFilterMode > 1.5)
         return frac;
 
-    return clamp((frac - 0.5) / gTexelScale + 0.5, 0.0, 1.0);
+    return clamp((frac - 0.5) / (gTexelScale * uFilterWidth) + 0.5, 0.0, 1.0);
 }
 
 // Same idea for the composite, which has real neighbours everywhere and so can
@@ -141,13 +158,14 @@ vec2 SharpUV(vec2 uv)
     vec2 centre = floor(texel) + 0.5;
     vec2 frac = texel - centre;
 
-    if (uFilter < 0.5)
+    if (uFilterMode < 0.5)
         return centre / uSourceSize;
 
-    if (uFilter > 1.5)
+    if (uFilterMode > 1.5)
         return uv;
 
-    return (centre + clamp(frac / gTexelScale, -0.5, 0.5)) / uSourceSize;
+    return (centre + clamp(frac / (gTexelScale * uFilterWidth), -0.5, 0.5)) /
+           uSourceSize;
 }
 
 // A layer's buffer holds nothing outside its own coverage, so an ordinary
@@ -251,6 +269,7 @@ void main()
             fragColor = SampleLayer(bestUV, bestLayer);
         }
 
+        fragColor.rgb = ToLinear(pow(fragColor.rgb, vec3(uGamma)));
         return;
     }
 
@@ -269,6 +288,7 @@ void main()
     }
 
     fragColor = texture(uFrame, SharpUV(uv));
+    fragColor.rgb = ToLinear(pow(fragColor.rgb, vec3(uGamma)));
 }
 )";
 
@@ -280,9 +300,17 @@ out vec4 fragColor;
 
 uniform sampler2D uOverlay;
 
+vec3 ToLinear(vec3 colour)
+{
+    return mix(colour / 12.92,
+               pow((colour + 0.055) / 1.055, vec3(2.4)),
+               step(vec3(0.04045), colour));
+}
+
 void main()
 {
     fragColor = texture(uOverlay, vec2(vUV.x, 1.0 - vUV.y));
+    fragColor.rgb = ToLinear(fragColor.rgb);
 }
 )";
 
@@ -629,6 +657,17 @@ void SetFilter(int filter)
 	g_filter = filter;
 }
 
+void SetGamma(float gamma)
+{
+	g_gamma = gamma;
+}
+
+float SrgbToLinear(float value)
+{
+	return value <= 0.04045f ? value / 12.92f
+	                         : std::pow((value + 0.055f) / 1.055f, 2.4f);
+}
+
 void UploadOverlay(const uint16_t *pixels, int width, int height)
 {
 	glBindTexture(GL_TEXTURE_2D, g_overlay_texture);
@@ -732,8 +771,16 @@ void DrawEye(GLuint color_texture, int width, int height, float shift)
 	glUniform2f(g_loc_source_size, kTexWidth, kTexHeight);
 	glUniform2f(g_loc_visible, g_visible_u, g_visible_v);
 	glUniform1f(g_loc_shift, shift);
-	glUniform1f(glGetUniformLocation(g_program, "uFilter"),
-	            static_cast<float>(g_filter));
+	// Level 0 is nearest and the last is plain bilinear; the ones between
+	// widen the blend band.
+	static const float kWidths[] = {1.0f, 1.0f, 2.5f, 6.0f, 1.0f};
+	const int levels = static_cast<int>(sizeof(kWidths) / sizeof(kWidths[0]));
+	const int level = g_filter < 0 ? 0 : (g_filter >= levels ? levels - 1 : g_filter);
+
+	glUniform1f(glGetUniformLocation(g_program, "uFilterMode"),
+	            level == 0 ? 0.0f : (level == levels - 1 ? 2.0f : 1.0f));
+	glUniform1f(glGetUniformLocation(g_program, "uFilterWidth"), kWidths[level]);
+	glUniform1f(glGetUniformLocation(g_program, "uGamma"), g_gamma);
 
 	glUniform1i(glGetUniformLocation(g_program, "uLayered"), g_layered ? 1 : 0);
 

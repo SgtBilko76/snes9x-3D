@@ -8,7 +8,10 @@
 namespace vr {
 
 struct ScreenGeometry {
-	float radius = 4.0f;          // metres from the viewer to the screen
+	// Metres from the viewer to the screen. The apparent size comes from the
+	// width angle rather than this, so distance changes where the screen sits
+	// without changing how big it looks.
+	float radius = 3.0f;
 	float central_angle = 0.80f;  // radians of arc the screen covers
 	float aspect = 4.0f / 3.0f;
 
@@ -24,13 +27,19 @@ struct ScreenGeometry {
 	// Costs one tile-rendering pass per active layer.
 	bool layer_split = true;
 
-	// 0 pixels, 1 sharp, 2 soft.  "Sharp" mixes only across the last texel at
-	// each edge, which takes the stair-steps off the pixel grid without
-	// turning it to mush.
+	// How wide the blend across a texel edge is: 0 none, then progressively
+	// wider, up to ordinary bilinear at the top.
 	int filter = 1;
+
+	// Trim on the way to the display; 1.0 leaves the picture alone, higher
+	// darkens it.
+	float gamma = 1.0f;
 };
 
-constexpr int kFilterCount = 3;
+constexpr float kMinGamma = 0.6f;
+constexpr float kMaxGamma = 1.8f;
+
+constexpr int kFilterCount = 5;
 
 constexpr float kMinRadius = 1.0f;
 constexpr float kMaxRadius = 12.0f;

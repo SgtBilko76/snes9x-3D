@@ -55,15 +55,27 @@ material the stereo parallax work needs.
 Touch controllers have exactly enough inputs for a SNES pad once the left
 thumbstick becomes the d-pad:
 
-| SNES        | Touch                     |
-|-------------|---------------------------|
-| D-pad       | left thumbstick           |
-| Y / X       | left `X` / left `Y`       |
-| B / A       | right `A` / right `B`     |
-| L / R       | left / right trigger      |
-| Select      | left grip                 |
-| Start       | right grip                |
+| SNES        | Touch              |
+|-------------|--------------------|
+| D-pad       | left thumbstick    |
+| Y / X       | left `X` / left `Y`|
+| B / A       | right `A` / right `B` |
+| L / R       | left / right trigger |
+| Select      | left grip          |
+| Start       | right grip         |
 | —           | left menu button: options |
+
+That is the default; `Controls...` in the menu changes it. Every physical
+input gets an OpenXR action of its own and the mapping to a SNES button is
+kept on our side, because suggested bindings are fixed once the session
+starts and cannot be rebound at runtime. Left and right on a row cycles
+through the SNES buttons and back round through "none", and the mapping is
+remembered in the config.
+
+Two things stay put whatever the mapping: the left thumbstick is always the
+d-pad, and right `A` always selects in the menu, so no arrangement can leave
+the menu unusable. Rebinding an input releases whatever it was holding, or
+that button would stick down.
 
 A Bluetooth gamepad works too, and can be used at the same time.
 
@@ -109,8 +121,11 @@ Switching cartridges happens on the emulation thread, like the save states.
 The outgoing game's battery save is written first, while the filename is still
 derived from it; `Memory::LoadROM` resets the machine itself.
 
-The app still boots straight into the first ROM alphabetically, so it is
-playable without opening the menu at all.
+Nothing is loaded on startup. The app opens on the ROM list instead, because
+picking a game is the player's first move rather than something to guess at
+alphabetically. With no ROMs at all it is the same screen, which is also where
+storage access is granted and the folder is changed, so a bad setting cannot
+lock the app up.
 
 ## Save states
 
@@ -255,8 +270,15 @@ is already set costs nothing.
 | | |
 |---|---|
 | `Pixels` | no interpolation; a hard pixel grid |
-| `Sharp` | mixes only across the last texel at each edge -- keeps the grid crisp while taking the stair-steps off it (default) |
+| `Sharp` | blends across one screen pixel at each texel edge, which takes the stair-steps off while the grid still reads as a grid (default) |
+| `Smooth` | the same blend, widened |
+| `Softer` | wider again |
 | `Soft` | ordinary bilinear |
+
+The three middle settings are one mechanism at different widths: the blend is
+confined to a band around each texel edge, and widening that band walks
+towards bilinear. Past a point it *is* bilinear, so `Soft` is its own mode
+rather than an ever-larger number.
 
 A layer's buffer holds nothing outside its own coverage, so an ordinary
 bilinear tap near a layer edge would blend the picture with whatever was last

@@ -32,6 +32,13 @@ void DrawOverlay(GLuint color_texture, int width, int height);
 // 0 pixels, 1 sharp, 2 soft.
 void SetFilter(int filter);
 
+// Trim applied before the picture is handed over; 1.0 leaves it alone, higher
+// darkens.
+void SetGamma(float gamma);
+
+// For colours chosen by eye that have to be written to a linear target.
+float SrgbToLinear(float value);
+
 // Fills a swapchain image with a flat colour, for the backdrop layer.
 void ClearSwapchainImage(GLuint color_texture, int width, int height,
                          float red, float green, float blue);

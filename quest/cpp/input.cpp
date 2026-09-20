@@ -1,9 +1,9 @@
 #include "input.h"
-#include "emu.h"
 #include "log.h"
 
 #include <android/keycodes.h>
 
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -11,35 +11,44 @@ namespace input {
 namespace {
 
 constexpr float kStickDeadzone = 0.45f;
-// Generous, because nothing here is worth a screen that creeps towards the
-// player on its own while a controller rests on a table.
 constexpr float kAdjustDeadzone = 0.55f;
 
-XrActionSet g_action_set = XR_NULL_HANDLE;
+// The menu wants a deliberate push rather than a game's quick response: a
+// further throw before a row change counts, a longer wait before it starts
+// repeating, and a slower repeat once it does.
+constexpr float kMenuDeadzone = 0.70f;
+constexpr float kMenuFirstRepeat = 0.45f;
+constexpr float kMenuRepeat = 0.25f;
 
+XrActionSet g_action_set = XR_NULL_HANDLE;
 XrAction g_dpad_action = XR_NULL_HANDLE;
 XrAction g_menu_action = XR_NULL_HANDLE;
 
-struct ButtonAction {
-	emu::Button button;
+struct PhysicalInput {
 	const char *name;
+	const char *action;
 	const char *binding;
-	XrAction action = XR_NULL_HANDLE;
-	bool pressed = false;
+	XrAction handle = XR_NULL_HANDLE;
+	bool down = false;
 };
 
-// Touch has exactly twelve inputs to spare once the left stick becomes the
-// d-pad, which is what a SNES pad needs.
-ButtonAction g_buttons[] = {
-	{ emu::BTN_Y,      "snes_y",      "/user/hand/left/input/x/click"        },
-	{ emu::BTN_X,      "snes_x",      "/user/hand/left/input/y/click"        },
-	{ emu::BTN_B,      "snes_b",      "/user/hand/right/input/a/click"       },
-	{ emu::BTN_A,      "snes_a",      "/user/hand/right/input/b/click"       },
-	{ emu::BTN_L,      "snes_l",      "/user/hand/left/input/trigger/value"  },
-	{ emu::BTN_R,      "snes_r",      "/user/hand/right/input/trigger/value" },
-	{ emu::BTN_SELECT, "snes_select", "/user/hand/left/input/squeeze/value"  },
-	{ emu::BTN_START,  "snes_start",  "/user/hand/right/input/squeeze/value" },
+// Order matches the Physical enum.
+PhysicalInput g_inputs[kPhysicalCount] = {
+	{ "Right trigger", "right_trigger", "/user/hand/right/input/trigger/value" },
+	{ "Left trigger",  "left_trigger",  "/user/hand/left/input/trigger/value"  },
+	{ "Right A",       "right_a",       "/user/hand/right/input/a/click"       },
+	{ "Right B",       "right_b",       "/user/hand/right/input/b/click"       },
+	{ "Left X",        "left_x",        "/user/hand/left/input/x/click"        },
+	{ "Left Y",        "left_y",        "/user/hand/left/input/y/click"        },
+	{ "Right grip",    "right_grip",    "/user/hand/right/input/squeeze/value" },
+	{ "Left grip",     "left_grip",     "/user/hand/left/input/squeeze/value"  },
+	{ "Right stick",   "right_stick",   "/user/hand/right/input/thumbstick/click" },
 };
+
+int g_binding[kPhysicalCount];
+
+// What each SNES button is reported as, so a rebind can release the old one.
+bool g_button_held[emu::BTN_COUNT] = {};
 
 bool g_dpad_state[4] = {false, false, false, false};
 bool g_menu_was_down = false;
@@ -59,18 +68,105 @@ XrPath ToPath(XrInstance instance, const char *text)
 	return path;
 }
 
+void ReportButton(emu::Button button, bool pressed)
+{
+	if (g_button_held[button] == pressed)
+		return;
+	g_button_held[button] = pressed;
+	emu::SetButton(button, pressed);
+}
+
 void SetDpad(int index, emu::Button button, bool pressed)
 {
 	if (g_dpad_state[index] == pressed)
 		return;
 	g_dpad_state[index] = pressed;
-	emu::SetButton(button, pressed);
+	ReportButton(button, pressed);
 }
 
 } // namespace
 
+const char *PhysicalName(int physical)
+{
+	if (physical < 0 || physical >= kPhysicalCount)
+		return "";
+	return g_inputs[physical].name;
+}
+
+int Binding(int physical)
+{
+	if (physical < 0 || physical >= kPhysicalCount)
+		return -1;
+	return g_binding[physical];
+}
+
+void SetBinding(int physical, int button)
+{
+	if (physical < 0 || physical >= kPhysicalCount)
+		return;
+
+	// Whatever was on it stops being pressed, or it would stick down.
+	const int previous = g_binding[physical];
+	if (previous >= 0)
+		ReportButton(static_cast<emu::Button>(previous), false);
+
+	g_binding[physical] = button;
+	g_inputs[physical].down = false;
+}
+
+void ResetBindings()
+{
+	g_binding[kLeftX] = emu::BTN_Y;
+	g_binding[kLeftY] = emu::BTN_X;
+	g_binding[kRightA] = emu::BTN_B;
+	g_binding[kRightB] = emu::BTN_A;
+	g_binding[kLeftTrigger] = emu::BTN_L;
+	g_binding[kRightTrigger] = emu::BTN_R;
+	g_binding[kLeftGrip] = emu::BTN_SELECT;
+	g_binding[kRightGrip] = emu::BTN_START;
+	g_binding[kRightStick] = -1;
+}
+
+std::string SerialiseBindings()
+{
+	std::string text;
+	for (int i = 0; i < kPhysicalCount; i++)
+	{
+		if (i)
+			text += ",";
+		text += std::to_string(g_binding[i]);
+	}
+	return text;
+}
+
+void ParseBindings(const std::string &text)
+{
+	int index = 0;
+	size_t start = 0;
+
+	while (index < kPhysicalCount && start <= text.size())
+	{
+		const size_t comma = text.find(',', start);
+		const std::string piece =
+			text.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+
+		if (!piece.empty())
+		{
+			const int button = atoi(piece.c_str());
+			g_binding[index] = (button >= 0 && button < emu::BTN_COUNT) ? button : -1;
+		}
+
+		index++;
+		if (comma == std::string::npos)
+			break;
+		start = comma + 1;
+	}
+}
+
 bool Init(XrInstance instance, XrSession session)
 {
+	ResetBindings();
+
 	XrActionSetCreateInfo set_info{XR_TYPE_ACTION_SET_CREATE_INFO};
 	strcpy(set_info.actionSetName, "gameplay");
 	strcpy(set_info.localizedActionSetName, "Gameplay");
@@ -98,15 +194,15 @@ bool Init(XrInstance instance, XrSession session)
 	g_dpad_action = make_action("dpad", "D-pad", XR_ACTION_TYPE_VECTOR2F_INPUT);
 	g_menu_action = make_action("menu", "Options menu", XR_ACTION_TYPE_BOOLEAN_INPUT);
 
-	for (auto &entry : g_buttons)
-		entry.action = make_action(entry.name, entry.name, XR_ACTION_TYPE_BOOLEAN_INPUT);
+	for (auto &entry : g_inputs)
+		entry.handle = make_action(entry.action, entry.name, XR_ACTION_TYPE_BOOLEAN_INPUT);
 
 	std::vector<XrActionSuggestedBinding> bindings;
 	bindings.push_back({g_dpad_action, ToPath(instance, "/user/hand/left/input/thumbstick")});
 	bindings.push_back({g_menu_action, ToPath(instance, "/user/hand/left/input/menu/click")});
 
-	for (auto &entry : g_buttons)
-		bindings.push_back({entry.action, ToPath(instance, entry.binding)});
+	for (auto &entry : g_inputs)
+		bindings.push_back({entry.handle, ToPath(instance, entry.binding)});
 
 	XrInteractionProfileSuggestedBinding suggested{
 		XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
@@ -143,27 +239,6 @@ void Shutdown()
 	g_action_set = XR_NULL_HANDLE;
 }
 
-// Releases anything the pad is holding, so opening the menu mid-input does not
-// leave a button stuck down in the game.
-void ReleasePad()
-{
-	for (auto &entry : g_buttons)
-		if (entry.pressed)
-		{
-			entry.pressed = false;
-			emu::SetButton(entry.button, false);
-		}
-
-	static const emu::Button kDpad[4] = {emu::BTN_LEFT, emu::BTN_RIGHT,
-	                                     emu::BTN_DOWN, emu::BTN_UP};
-	for (int i = 0; i < 4; i++)
-		if (g_dpad_state[i])
-		{
-			g_dpad_state[i] = false;
-			emu::SetButton(kDpad[i], false);
-		}
-}
-
 void Sync(XrSession session, bool menu_open, float delta_seconds, Controls &controls)
 {
 	XrActiveActionSet active{g_action_set, XR_NULL_PATH};
@@ -186,28 +261,33 @@ void Sync(XrSession session, bool menu_open, float delta_seconds, Controls &cont
 		g_menu_was_down = down;
 	}
 
-	// Face and shoulder buttons.
-	bool activate_down = false;
-	for (auto &entry : g_buttons)
+	for (int i = 0; i < kPhysicalCount; i++)
 	{
-		get.action = entry.action;
+		get.action = g_inputs[i].handle;
 		XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
 		if (XR_FAILED(xrGetActionStateBoolean(session, &get, &state)) || !state.isActive)
 			continue;
 
-		const bool pressed = state.currentState == XR_TRUE || g_pad_buttons[entry.button];
+		g_inputs[i].down = state.currentState == XR_TRUE;
+	}
 
-		// The SNES B button doubles as the menu's select.
-		if (entry.button == emu::BTN_B)
-			activate_down = pressed;
+	// Right A always selects in the menu, whatever it is bound to, so the menu
+	// stays usable no matter how the pad has been arranged.
+	const bool activate_down = g_inputs[kRightA].down || g_pad_buttons[emu::BTN_B];
 
-		if (menu_open)
-			continue;
-
-		if (pressed != entry.pressed)
+	if (!menu_open)
+	{
+		for (int button = 0; button < emu::BTN_COUNT; button++)
 		{
-			entry.pressed = pressed;
-			emu::SetButton(entry.button, pressed);
+			if (button >= emu::BTN_UP && button <= emu::BTN_RIGHT)
+				continue;   // the d-pad comes from the stick below
+
+			bool pressed = g_pad_buttons[button];
+			for (int i = 0; i < kPhysicalCount && !pressed; i++)
+				if (g_binding[i] == button)
+					pressed = g_inputs[i].down;
+
+			ReportButton(static_cast<emu::Button>(button), pressed);
 		}
 	}
 
@@ -227,7 +307,7 @@ void Sync(XrSession session, bool menu_open, float delta_seconds, Controls &cont
 			const float y = stick.currentState.y;
 
 			// Up on the stick is +y, but the menu counts rows downwards.
-			const int direction = y > kStickDeadzone ? -1 : (y < -kStickDeadzone ? 1 : 0);
+			const int direction = y > kMenuDeadzone ? -1 : (y < -kMenuDeadzone ? 1 : 0);
 
 			if (direction != g_repeat_direction)
 			{
@@ -238,9 +318,9 @@ void Sync(XrSession session, bool menu_open, float delta_seconds, Controls &cont
 			else if (direction != 0)
 			{
 				g_repeat_timer += delta_seconds;
-				if (g_repeat_timer > 0.25f)
+				if (g_repeat_timer > kMenuFirstRepeat)
 				{
-					g_repeat_timer = 0.15f;
+					g_repeat_timer = kMenuFirstRepeat - kMenuRepeat;
 					controls.menu_vertical = direction;
 				}
 			}
@@ -286,31 +366,16 @@ bool HandleAndroidKey(int32_t keycode, bool pressed)
 		default: return false;
 	}
 
-	if (g_pad_buttons[button] != pressed)
-	{
-		g_pad_buttons[button] = pressed;
-		emu::SetButton(button, pressed);
-	}
-
+	g_pad_buttons[button] = pressed;
 	return true;
 }
 
 bool HandleAndroidAxis(float x, float y)
 {
-	struct { emu::Button button; bool pressed; } states[] = {
-		{ emu::BTN_LEFT,  x < -kStickDeadzone },
-		{ emu::BTN_RIGHT, x >  kStickDeadzone },
-		{ emu::BTN_UP,    y < -kStickDeadzone },
-		{ emu::BTN_DOWN,  y >  kStickDeadzone },
-	};
-
-	for (auto &state : states)
-		if (g_pad_buttons[state.button] != state.pressed)
-		{
-			g_pad_buttons[state.button] = state.pressed;
-			emu::SetButton(state.button, state.pressed);
-		}
-
+	g_pad_buttons[emu::BTN_LEFT]  = x < -kStickDeadzone;
+	g_pad_buttons[emu::BTN_RIGHT] = x >  kStickDeadzone;
+	g_pad_buttons[emu::BTN_UP]    = y < -kStickDeadzone;
+	g_pad_buttons[emu::BTN_DOWN]  = y >  kStickDeadzone;
 	return true;
 }
 

@@ -180,6 +180,7 @@ struct App {
 	bool last_frame_mode7 = false;
 	std::string base_dir;
 	std::string rom_dir;
+	std::string bindings;
 };
 
 App g_app;
@@ -263,10 +264,15 @@ void LoadScreenConfig()
 			                                 0.0f, vr::kMaxStereo);
 		else if (key == "split")
 			g_app.screen.layer_split = atoi(value.c_str()) != 0;
+		else if (key == "gamma")
+			g_app.screen.gamma = std::clamp(strtof(value.c_str(), nullptr),
+			                                vr::kMinGamma, vr::kMaxGamma);
 		else if (key == "filter")
 			g_app.screen.filter = std::clamp(atoi(value.c_str()), 0, vr::kFilterCount - 1);
 		else if (key == "roms" && !value.empty())
 			g_app.rom_dir = value;
+		else if (key == "bindings")
+			g_app.bindings = value;   // applied after input::Init sets defaults
 	}
 
 	fclose(file);
@@ -283,7 +289,9 @@ void SaveScreenConfig()
 	fprintf(file, "stereo=%f\n", g_app.screen.stereo);
 	fprintf(file, "split=%d\n", g_app.screen.layer_split ? 1 : 0);
 	fprintf(file, "filter=%d\n", g_app.screen.filter);
+	fprintf(file, "gamma=%f\n", g_app.screen.gamma);
 	fprintf(file, "roms=%s\n", g_app.rom_dir.c_str());
+	fprintf(file, "bindings=%s\n", input::SerialiseBindings().c_str());
 	fclose(file);
 }
 
@@ -527,11 +535,16 @@ bool InitSwapchain()
 	std::vector<int64_t> formats(format_count);
 	xrEnumerateSwapchainFormats(g_app.session, format_count, &format_count, formats.data());
 
-	// The SNES palette is already display-referred, so prefer a plain RGBA8
-	// target and let the runtime pass it through untouched.
-	int64_t chosen = formats.empty() ? GL_RGBA8 : formats[0];
+	// An sRGB target, because the runtime reads a plain RGBA8 one as linear
+	// and encodes it again on the way to the display, which lifts every
+	// midtone. The stored bits end up the same either way -- the shaders undo
+	// the hardware's encode -- but this way the compositor is told what they
+	// are.
+	constexpr int64_t kSrgb8Alpha8 = 0x8C43;
+
+	int64_t chosen = formats.empty() ? kSrgb8Alpha8 : formats[0];
 	for (int64_t format : formats)
-		if (format == GL_RGBA8)
+		if (format == kSrgb8Alpha8)
 		{
 			chosen = format;
 			break;
@@ -841,7 +854,9 @@ bool RenderBackdrop(XrTime predicted_time)
 		// image, not so black that the room disappears entirely.
 		renderer::ClearSwapchainImage(g_app.backdrop_images[eye][index].image,
 		                              kBackdropSize, kBackdropSize,
-		                              0.02f, 0.02f, 0.03f);
+		                              renderer::SrgbToLinear(0.02f),
+		                              renderer::SrgbToLinear(0.02f),
+		                              renderer::SrgbToLinear(0.03f));
 
 		xrReleaseSwapchainImage(g_app.backdrop_swapchain[eye], nullptr);
 
@@ -1274,28 +1289,27 @@ void android_main(android_app *app)
 	if (!input::Init(g_app.instance, g_app.session))
 		LOGW("input: controllers unavailable, gamepad only");
 
+	// Init lays down the defaults, so a saved mapping goes on after it.
+	if (!g_app.bindings.empty())
+		input::ParseBindings(g_app.bindings);
+
 	const std::vector<std::string> roms = ListRoms(g_app.rom_dir);
 	menu::SetRomList(roms);
 	menu::SetRomDir(g_app.rom_dir);
 	menu::SetStorageAccess(HasAllFilesAccess(app));
 
+	// Nothing is loaded on startup: picking a game is the player's first move,
+	// not something to be guessed at alphabetically.  With no ROMs at all the
+	// same screen is still the way to grant storage access or point the ROM
+	// folder somewhere readable, so a bad setting cannot lock the app up.
 	if (roms.empty())
-	{
-		// Do not give up: without the menu there would be no way to grant
-		// storage access or point the ROM folder somewhere readable, and a
-		// bad setting would leave the app unable to start at all.
-		LOGW("no ROM in %s; opening the menu instead", g_app.rom_dir.c_str());
-		menu::Toggle();
-	}
+		LOGW("no ROM in %s", g_app.rom_dir.c_str());
 	else
-	{
-		LOGI("%d ROMs available, starting with %s", (int) roms.size(),
-		     roms.front().c_str());
-	}
+		LOGI("%d ROMs available", (int) roms.size());
 
-	if (!audio::Start() ||
-	    !emu::Start(g_app.base_dir,
-	                roms.empty() ? std::string() : g_app.rom_dir + "/" + roms.front()))
+	menu::OpenRomList();
+
+	if (!audio::Start() || !emu::Start(g_app.base_dir, std::string()))
 	{
 		LOGE("emulator failed to start");
 		Shutdown(app);
@@ -1351,6 +1365,7 @@ void android_main(android_app *app)
 			emu::SetLayerSplit(g_app.screen.layer_split);
 
 		renderer::SetFilter(g_app.screen.filter);
+		renderer::SetGamma(g_app.screen.gamma);
 
 		// Re-picked when the cartridge changes, since PAL and NTSC want
 		// different display rates.
@@ -1374,6 +1389,10 @@ void android_main(android_app *app)
 			case menu::Action::OpenFolder:
 				menu::SetFolderList(menu::ChosenFolder(),
 				                    ListFolders(menu::ChosenFolder()));
+				break;
+
+			case menu::Action::BindingsChanged:
+				SaveScreenConfig();
 				break;
 
 			case menu::Action::GrantStorage:

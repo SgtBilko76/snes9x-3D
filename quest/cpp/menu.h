@@ -10,9 +10,13 @@ namespace menu {
 
 // What the player asked the menu to do this frame, beyond editing a value.
 enum class Action { None, Recenter, SaveState, LoadState, LoadRom,
-                    OpenFolder, UseFolder, GrantStorage };
+                    OpenFolder, UseFolder, GrantStorage, BindingsChanged };
 
 void Toggle();
+
+// Opens straight onto the ROM list, for starting up with nothing loaded.
+void OpenRomList();
+
 void Close();
 bool IsOpen();
 

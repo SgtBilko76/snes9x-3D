@@ -1,8 +1,35 @@
 #pragma once
 
+#include "emu.h"
+
 #include <openxr/openxr.h>
 
+#include <string>
+
 namespace input {
+
+// The physical inputs a SNES button can be put on.  OpenXR bindings are fixed
+// once the session starts, so each of these gets an action of its own and the
+// mapping to a SNES button is ours to change.
+enum Physical {
+	kRightTrigger, kLeftTrigger,
+	kRightA, kRightB,
+	kLeftX, kLeftY,
+	kRightGrip, kLeftGrip,
+	kRightStick,
+	kPhysicalCount
+};
+
+const char *PhysicalName(int physical);
+
+// The SNES button on that input, or -1 for none.
+int Binding(int physical);
+void SetBinding(int physical, int button);
+void ResetBindings();
+
+// For the config file: "3,4,1,..." over all physical inputs.
+std::string SerialiseBindings();
+void ParseBindings(const std::string &text);
 
 // What the player asked for this frame, beyond the SNES pad itself.
 struct Controls {

@@ -1,5 +1,22 @@
 # Snes9x VR
 
+## Unreleased
+
+- **Super FX games no longer show a black screen.** `Settings` is zeroed before
+  the defaults are applied, and `SuperFXClockMultiplier` is a percentage the
+  chip's cycle budget is scaled by, so at zero Star Fox ran perfectly while
+  being handed no cycles to draw with. The same omission left `OneClockCycle`,
+  `OneSlowClockCycle` and `TwoClockCycles` at zero, which is every CPU timing
+  decision the core makes, and the sound interpolation at none.
+- **Controls are remappable** from a `Controls...` page in the menu. Each
+  physical input carries whichever SNES button you put on it; the defaults are
+  unchanged.
+- **Two more smoothing levels** between `Sharp` and `Soft`.
+- **No ROM is loaded on startup**; the app opens on the ROM list.
+- **The screen sits closer** by default, 3 m rather than 4. The apparent size
+  comes from the width angle, so this changes where it is without changing how
+  big it looks.
+
 ## 0.1 — first beta
 
 Meta Quest port by Sgt. Bilko.
@@ -59,6 +76,7 @@ gets 90 Hz, the closest the headset offers to a multiple of 50.
   captured but not yet associated with sprites.
 - Super FX games (Star Fox) get layer-order depth only. There is no transform
   stage to hook: the geometry lives in ROM code as ordinary integer
-  arithmetic.
+  arithmetic. They also boot to a black screen for a good fifteen seconds
+  before the first picture, which is the game, not the port.
 - A ROM folder outside the app's own directory needs all-files access, granted
   once from the menu.
