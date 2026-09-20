@@ -10,6 +10,9 @@
 #include "port.h"
 #include <vector>
 
+// BG1 to BG4, then the sprites.
+#define GFX_LAYER_COUNT 5
+
 struct SGFX
 {
 	const uint32 Pitch = sizeof(uint16) * MAX_SNES_WIDTH;
@@ -38,6 +41,23 @@ struct SGFX
 	uint8	OBJVisibleTiles[128];
 
 	struct ClipData	*Clip;
+
+	// Layer split: each background and the sprites rendered into buffers of
+	// their own, in addition to the normal composite, so that a stereoscopic
+	// frontend can place them at different depths and have something to show
+	// where a displaced layer uncovers the one behind it.  Off by default;
+	// it costs one tile-rendering pass per active layer.
+	bool8	SplitLayers;
+
+	// Which BG mode each scanline was rendered in.  Mode 7 sets its matrix per
+	// line, and that matrix is the only place the perspective of a Mode 7
+	// ground plane is written down, so a stereoscopic frontend needs to know
+	// which lines to read it for.  0xff means the line was never drawn.
+	uint8	LineBGMode[240];
+	uint16	*LayerScreen[GFX_LAYER_COUNT];
+	uint8	*LayerZBuffer[GFX_LAYER_COUNT];
+	std::vector<uint16> LayerScreenBuffer[GFX_LAYER_COUNT];
+	std::vector<uint8>  LayerZBufferData[GFX_LAYER_COUNT];
 
 	struct
 	{
@@ -121,6 +141,7 @@ extern uint16		BlackColourMap[256];
 extern uint16		DirectColourMaps[8][256];
 extern uint8		mul_brightness[16][32];
 extern uint8		brightness_cap[64];
+extern struct SLineMatrixData	LineMatrixData[240];
 extern struct SBG	BG;
 extern struct SGFX	GFX;
 

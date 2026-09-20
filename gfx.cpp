@@ -55,6 +55,16 @@ bool8 S9xGraphicsInit (void)
 
 	GFX.ScreenBuffer.resize(MAX_SNES_WIDTH * (MAX_SNES_HEIGHT + 64));
 	GFX.Screen = &GFX.ScreenBuffer[GFX.RealPPL * 32];
+
+	for (int layer = 0; layer < GFX_LAYER_COUNT; layer++)
+	{
+		// Same geometry as the composite, so the tile renderers can write to
+		// either without knowing the difference.
+		GFX.LayerScreenBuffer[layer].resize(MAX_SNES_WIDTH * (MAX_SNES_HEIGHT + 64));
+		GFX.LayerZBufferData[layer].resize(GFX.ScreenSize);
+		GFX.LayerScreen[layer] = &GFX.LayerScreenBuffer[layer][GFX.RealPPL * 32];
+		GFX.LayerZBuffer[layer] = GFX.LayerZBufferData[layer].data();
+	}
 	GFX.ZERO = (uint16 *) malloc(sizeof(uint16) * 0x10000);
 	GFX.SubScreen  = (uint16 *) malloc(GFX.ScreenSize * sizeof(uint16));
 	GFX.ZBuffer    = (uint8 *)  malloc(GFX.ScreenSize);
@@ -107,6 +117,16 @@ void S9xGraphicsDeinit (void)
 	if (GFX.SubScreen)  { free(GFX.SubScreen);  GFX.SubScreen  = NULL; }
 	if (GFX.ZBuffer)    { free(GFX.ZBuffer);    GFX.ZBuffer    = NULL; }
 	if (GFX.SubZBuffer) { free(GFX.SubZBuffer); GFX.SubZBuffer = NULL; }
+
+	for (int layer = 0; layer < GFX_LAYER_COUNT; layer++)
+	{
+		GFX.LayerScreenBuffer[layer].clear();
+		GFX.LayerScreenBuffer[layer].shrink_to_fit();
+		GFX.LayerZBufferData[layer].clear();
+		GFX.LayerZBufferData[layer].shrink_to_fit();
+		GFX.LayerScreen[layer] = NULL;
+		GFX.LayerZBuffer[layer] = NULL;
+	}
 }
 
 void S9xGraphicsScreenResize (void)
@@ -315,6 +335,10 @@ static void rerender_line_span (int line, int x0, int x1)
 	uint32	zrow = line * GFX.PPL + ((GFX.DoInterlace && S9xInterlaceField()) ? GFX.RealPPL : 0);
 	memset(GFX.ZBuffer + zrow, 0, IPPU.RenderedScreenWidth);
 	memset(GFX.SubZBuffer + zrow, 0, IPPU.RenderedScreenWidth);
+
+	if (GFX.SplitLayers)
+		for (int layer = 0; layer < GFX_LAYER_COUNT; layer++)
+			memset(GFX.LayerZBuffer[layer] + zrow, 0, IPPU.RenderedScreenWidth);
 
 	IPPU.PreviousLine = line;
 	IPPU.CurrentLine  = line + 1;
@@ -610,6 +634,13 @@ void S9xStartScreenRefresh (void)
 
 		memset(GFX.ZBuffer, 0, GFX.ScreenSize);
 		memset(GFX.SubZBuffer, 0, GFX.ScreenSize);
+
+		// Coverage for the split layers: zero means nothing was drawn there.
+		if (GFX.SplitLayers)
+			for (int layer = 0; layer < GFX_LAYER_COUNT; layer++)
+				memset(GFX.LayerZBuffer[layer], 0, GFX.ScreenSize);
+
+		memset(GFX.LineBGMode, 0xff, sizeof(GFX.LineBGMode));
 	}
 
 	if (++IPPU.FrameCount == (uint32)Memory.ROMFramesPerSecond)
@@ -750,30 +781,11 @@ void RenderLine (uint8 C)
 	}
 }
 
-static inline void RenderScreen (bool8 sub)
+// Draws whichever backgrounds and sprites `BGActive` selects into the current
+// GFX.S / GFX.DB target.  Split out of RenderScreen so that the layer-split
+// pass can run it once per layer with every other bit masked off.
+static inline void RenderLayerSet (uint8 BGActive, int D, bool8 sub)
 {
-	uint8	BGActive;
-	int		D;
-
-	if (!sub)
-	{
-		GFX.S = GFX.Screen;
-		if (GFX.DoInterlace && S9xInterlaceField())
-			GFX.S += GFX.RealPPL;
-		GFX.DB = GFX.ZBuffer;
-		GFX.Clip = IPPU.Clip[0];
-		BGActive = Memory.FillRAM[0x212c] & ~Settings.BG_Forced;
-		D = 32;
-	}
-	else
-	{
-		GFX.S = GFX.SubScreen;
-		GFX.DB = GFX.SubZBuffer;
-		GFX.Clip = IPPU.Clip[1];
-		BGActive = Memory.FillRAM[0x212d] & ~Settings.BG_Forced;
-		D = (Memory.FillRAM[0x2130] & 2) << 4; // 'do math' depth flag
-	}
-
 	if (BGActive & 0x10)
 	{
 		BG.TileAddress = PPU.OBJNameBase;
@@ -873,9 +885,69 @@ static inline void RenderScreen (bool8 sub)
 
 	#undef DO_BG
 
+}
+
+// Renders each active layer on its own, alongside the normal composite.
+static inline void RenderSplitLayers (uint8 BGActive, int D)
+{
+	uint16	*saved_screen = GFX.S;
+	uint8	*saved_depth = GFX.DB;
+
+	for (int layer = 0; layer < GFX_LAYER_COUNT; layer++)
+	{
+		const uint8	mask = (layer < 4) ? (1 << layer) : 0x10;
+
+		if (!(BGActive & mask))
+			continue;
+
+		GFX.S = GFX.LayerScreen[layer];
+		if (GFX.DoInterlace && S9xInterlaceField())
+			GFX.S += GFX.RealPPL;
+		GFX.DB = GFX.LayerZBuffer[layer];
+
+		RenderLayerSet(BGActive & mask, D, FALSE);
+	}
+
+	GFX.S = saved_screen;
+	GFX.DB = saved_depth;
+}
+
+static inline void RenderScreen (bool8 sub)
+{
+	uint8	BGActive;
+	int		D;
+
+	if (!sub)
+	{
+		GFX.S = GFX.Screen;
+		if (GFX.DoInterlace && S9xInterlaceField())
+			GFX.S += GFX.RealPPL;
+		GFX.DB = GFX.ZBuffer;
+		GFX.Clip = IPPU.Clip[0];
+		BGActive = Memory.FillRAM[0x212c] & ~Settings.BG_Forced;
+		D = 32;
+	}
+	else
+	{
+		GFX.S = GFX.SubScreen;
+		GFX.DB = GFX.SubZBuffer;
+		GFX.Clip = IPPU.Clip[1];
+		BGActive = Memory.FillRAM[0x212d] & ~Settings.BG_Forced;
+		D = (Memory.FillRAM[0x2130] & 2) << 4; // 'do math' depth flag
+	}
+
+	if (!sub)
+		for (uint32 y = GFX.StartY; y <= GFX.EndY && y < 240; y++)
+			GFX.LineBGMode[y] = PPU.BGMode;
+
+	RenderLayerSet(BGActive, D, sub);
+
 	BG.EnableMath = !sub && (Memory.FillRAM[0x2131] & 0x20);
 
 	DrawBackdrop();
+
+	if (!sub && GFX.SplitLayers)
+		RenderSplitLayers(BGActive, D);
 }
 
 void S9xUpdateScreen (void)

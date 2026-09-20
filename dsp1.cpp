@@ -792,7 +792,21 @@ static void DSP1_Project (int16 X, int16 Y, int16 Z, int16 *H, int16 *V, int16 *
 	// M
 	DSP1_Normalize(C2, &C6, &E4);
 	*M = DSP1_Truncate(C6, E4 + DSP1.E_Les - E2 - 7); // M is the scale factor divided by 2^7
+
+	DSP1ProjectionTotal++;
+
+	if (DSP1ProjectionCount < S9X_DSP1_PROJECTION_MAX)
+	{
+		struct SDSP1Projection *p = &DSP1Projections[DSP1ProjectionCount++];
+		p->H = *H;
+		p->V = *V;
+		p->M = *M;
+	}
 }
+
+struct SDSP1Projection	DSP1Projections[S9X_DSP1_PROJECTION_MAX];
+int			DSP1ProjectionCount = 0;
+uint32			DSP1ProjectionTotal = 0;
 
 static void DSP1_Op06 (void)
 {

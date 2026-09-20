@@ -422,6 +422,23 @@ struct SDSP4
 	int16	OAM_Row[32];		// current number of tiles per row
 };
 
+// Every projection the game asks the DSP-1 for, kept for the frame.  This is
+// the one place a SNES game hands over real 3D coordinates: it passes world
+// X/Y/Z and gets back a screen position and a scale factor that is inversely
+// proportional to distance, which is exactly what stereo disparity needs.
+#define S9X_DSP1_PROJECTION_MAX	128
+
+struct SDSP1Projection
+{
+	int16	H;	// screen position the game was given
+	int16	V;
+	int16	M;	// scale factor, proportional to 1 / distance
+};
+
+extern struct SDSP1Projection	DSP1Projections[S9X_DSP1_PROJECTION_MAX];
+extern int			DSP1ProjectionCount;
+extern uint32			DSP1ProjectionTotal;
+
 extern struct SDSP0	DSP0;
 extern struct SDSP1	DSP1;
 extern struct SDSP2	DSP2;
