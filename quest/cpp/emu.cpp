@@ -417,6 +417,21 @@ void ApplyDefaultSettings()
 	Settings.TurboSkipFrames = 15;
 	Settings.MaxSpriteTilesPerLine = 34;
 
+	// These have defaults that are not zero, and Settings starts zeroed, so
+	// leaving them out does not give the default -- it gives nothing.
+	//
+	// The clock multiplier is a percentage the Super FX budget is scaled by,
+	// so at zero the chip is handed no cycles at all and a Star Fox renders a
+	// black screen while appearing to run perfectly.  The three cycle counts
+	// are what ONE_CYCLE, SLOW_ONE_CYCLE and TWO_CYCLES resolve to, which is
+	// every CPU timing decision the core makes.
+	Settings.SuperFXClockMultiplier = 100;
+	Settings.OneClockCycle = 6;
+	Settings.OneSlowClockCycle = 8;
+	Settings.TwoClockCycles = 12;
+
+	Settings.InterpolationMethod = DSP_INTERPOLATION_GAUSSIAN;
+
 	CPU.Flags = 0;
 }
 
@@ -527,8 +542,10 @@ bool Start(const std::string &base_dir, const std::string &rom_path)
 	GFX.SplitLayers = g_layer_split.load() ? TRUE : FALSE;
 
 	if (g_has_game.load())
-		LOGI("core: loaded %s (%dx%d)", Memory.ROMName,
-		     IPPU.RenderedScreenWidth, IPPU.RenderedScreenHeight);
+		LOGI("core: loaded %s (%dx%d), superfx x%u, cycles %d/%d/%d",
+		     Memory.ROMName, IPPU.RenderedScreenWidth, IPPU.RenderedScreenHeight,
+		     Settings.SuperFXClockMultiplier, Settings.OneClockCycle,
+		     Settings.OneSlowClockCycle, Settings.TwoClockCycles);
 
 	g_running.store(true);
 	g_thread = std::thread(EmuThread);
