@@ -1,4 +1,7 @@
 # Snes9x
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-SgtBilko76-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/SgtBilko76)
+
 *Snes9x - Portable Super Nintendo Entertainment System (TM) emulator*
 
 This is the official source code repository for the Snes9x project.
