@@ -218,6 +218,16 @@ bool Init(XrInstance instance, XrSession session)
 		return false;
 	}
 
+	// Pico's controllers answer to a profile of their own.  The runtime
+	// rejects a profile it does not know, which is not an error here: on a
+	// Quest the Touch bindings above are the ones that matter, and on a Pico
+	// it is the other way round.
+	suggested.interactionProfile =
+		ToPath(instance, "/interaction_profiles/bytedance/pico4_controller");
+	if (XR_FAILED(xrSuggestInteractionProfileBindings(instance, &suggested)))
+		LOGI("xr: no Pico controller profile on this runtime, which is expected "
+		     "anywhere but a Pico");
+
 	XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
 	attach.countActionSets = 1;
 	attach.actionSets = &g_action_set;

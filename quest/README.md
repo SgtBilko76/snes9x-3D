@@ -4,6 +4,41 @@ An OpenXR frontend that puts the SNES picture on a curved screen in front of
 the player. This is step one of the VR roadmap; the stereo work builds on top
 of it.
 
+## Pico
+
+Nothing here is Meta-specific by design. The app is a `NativeActivity` talking
+OpenXR, so a Pico runs the same binary; what it needs is its own manifest
+entries, which sit alongside Meta's because each vendor ignores the other's:
+
+- `pvr.app.type` and `pvr.sdk.version` on the application
+- `com.picovr.intent.category.VRAPP` on the launcher intent
+- controller bindings suggested for
+  `/interaction_profiles/bytedance/pico4_controller` as well as Touch; a
+  runtime that does not know a profile rejects it, which is logged and
+  otherwise harmless
+
+**None of this has been tested on a Pico.** There is no Pico here to test with,
+so the following are the parts most likely to need work, in the order they
+would fail:
+
+1. **The OpenXR loader.** This bundles the Khronos loader, which finds a
+   runtime through the Android broker. PICO OS registers one on recent
+   versions; on an older one the loader will not find a runtime and
+   `xrCreateInstance` fails. The fix is to ship Pico's own
+   `libopenxr_loader.so` instead. Symptom: `xrCreateInstance failed` in
+   logcat and the app exits at once.
+2. **The cylinder layer.** `XR_KHR_composition_layer_cylinder` may not be
+   there. The app already falls back to a flat quad and says so in logcat, so
+   this degrades rather than breaks.
+3. **Refresh rate.** Pico 4 offers 72 and 90 Hz, so a 60 fps cartridge cannot
+   get a whole multiple and will judder a little, the way PAL does on a Quest.
+   `XR_FB_display_refresh_rate` is a Meta extension; without it the rate is
+   left alone.
+4. **Controller mapping.** If the Pico profile is accepted but the buttons sit
+   wrongly, the `Controls...` page remaps them without a rebuild.
+
+To check it, `adb logcat -s Snes9xVR:V` says which of these applied.
+
 ## Building
 
 Needs the Android SDK with an NDK and build-tools installed. No Gradle and no
