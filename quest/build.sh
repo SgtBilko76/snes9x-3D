@@ -14,7 +14,7 @@ MIN_SDK=29
 TARGET_SDK=32
 PACKAGE="com.snes9x.vr"
 VERSION_NAME="0.1"
-VERSION_CODE=2
+VERSION_CODE=3
 OPENXR_VERSION="1.1.63"
 
 BUILD_DIR="$HERE/build"
@@ -50,6 +50,17 @@ fetch_openxr() {
 # --- native build -----------------------------------------------------------
 build_native() {
     echo ">> building native code"
+
+    # A cmake cache remembers the toolchain it was configured with. Installing
+    # a newer NDK changes which one this script picks, and the stale cache then
+    # pairs the old compiler with the new sysroot, which fails deep inside
+    # libc++ rather than anywhere obvious.
+    local stamp="$BUILD_DIR/cmake/.ndk"
+    if [ -d "$BUILD_DIR/cmake" ] &&
+       { [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$NDK" ]; }; then
+        echo ">> NDK changed, reconfiguring"
+        rm -rf "$BUILD_DIR/cmake"
+    fi
     "$CMAKE_BIN" -S "$HERE/cpp" -B "$BUILD_DIR/cmake" -G Ninja \
         -DCMAKE_MAKE_PROGRAM="$NINJA_BIN" \
         -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
@@ -58,6 +69,9 @@ build_native() {
         -DANDROID_NDK="$NDK" \
         -DSNES9X_VR_VERSION="$VERSION_NAME" \
         -DCMAKE_BUILD_TYPE=Release >/dev/null
+    mkdir -p "$BUILD_DIR/cmake"
+    echo "$NDK" > "$BUILD_DIR/cmake/.ndk"
+
     "$CMAKE_BIN" --build "$BUILD_DIR/cmake" --parallel
 }
 

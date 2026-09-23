@@ -68,6 +68,13 @@ gets 90 Hz, the closest the headset offers to a multiple of 50.
   comes from the width angle, so this changes where it is without changing how
   big it looks.
 
+### Pico
+
+One package now covers Pico headsets as well, with their manifest entries and
+controller profile alongside Meta's. **Untested: there was no Pico to try it
+on.** See the Pico section of the README for what is most likely to need
+fixing and how to tell from logcat.
+
 ### Known limits
 
 - PAL games still judder slightly: no rate the headset offers divides 50.
