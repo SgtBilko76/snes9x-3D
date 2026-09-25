@@ -34,7 +34,7 @@
     </queries>
 
     <application
-        android:label="Snes9x VR"
+        android:label="Snes9x 3D"
         android:hasCode="false"
         android:allowBackup="false"
         android:extractNativeLibs="true">
@@ -50,7 +50,7 @@
 
         <activity
             android:name="android.app.NativeActivity"
-            android:label="Snes9x VR"
+            android:label="Snes9x 3D"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
             android:excludeFromRecents="false"
