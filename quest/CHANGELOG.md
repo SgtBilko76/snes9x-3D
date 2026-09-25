@@ -1,4 +1,4 @@
-# Snes9x VR
+# Snes9x 3D
 
 ## 0.1 — first beta
 

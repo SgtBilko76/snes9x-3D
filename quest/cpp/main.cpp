@@ -472,7 +472,7 @@ bool InitInstance(android_app *app)
 	create.next = &android_info;
 	create.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 	create.enabledExtensionNames = extensions.data();
-	strcpy(create.applicationInfo.applicationName, "Snes9x VR");
+	strcpy(create.applicationInfo.applicationName, "Snes9x 3D");
 	create.applicationInfo.applicationVersion = 1;
 	strcpy(create.applicationInfo.engineName, "Snes9x");
 	create.applicationInfo.engineVersion = 1;

@@ -1,4 +1,4 @@
-# Snes9x for Meta Quest
+# Snes9x 3D for Meta Quest
 
 An OpenXR frontend that puts the SNES picture on a curved screen in front of
 the player. This is step one of the VR roadmap; the stereo work builds on top

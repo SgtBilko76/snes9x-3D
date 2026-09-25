@@ -200,7 +200,7 @@ void DrawHeader(uint16_t *pixels, int width, int height, const char *title)
 {
 	DrawText(pixels, width, height, kMarginX, kTitleY, title, kTitle, kOptionScale);
 
-	const std::string version = std::string("Snes9x VR ") + SNES9X_VR_VERSION;
+	const std::string version = std::string("Snes9x 3D ") + SNES9X_VR_VERSION;
 	DrawText(pixels, width, height,
 	         width - kMarginX - TextWidth(version, kRomScale), kTitleY + 6,
 	         version, kDimText, kRomScale);
