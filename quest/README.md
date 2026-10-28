@@ -87,6 +87,8 @@ material the stereo parallax work needs.
 
 ## Controls
 
+![Snes9x 3D controller mapping](../docs/controls.webp)
+
 Touch controllers have exactly enough inputs for a SNES pad once the left
 thumbstick becomes the d-pad:
 
