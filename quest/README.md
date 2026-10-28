@@ -1,5 +1,7 @@
 # Snes9x 3D for Meta Quest
 
+**Download, install guide, controls and pictures: [portroyale.online/snes9x.html](https://portroyale.online/snes9x.html)**
+
 An OpenXR frontend that puts the SNES picture on a curved screen in front of
 the player. This is step one of the VR roadmap; the stereo work builds on top
 of it.
